@@ -1,0 +1,798 @@
+<!doctype html>
+<html lang="en" class="dark">
+
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>BERTHCI | Final System</title>
+
+  <script src="https://cdn.tailwindcss.com"></script>
+  <script defer src="https://cdn.jsdelivr.net/npm/alpinejs@3.13.3/dist/cdn.min.js"></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/gsap/3.12.2/gsap.min.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/marked/marked.min.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+  <link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css" rel="stylesheet" />
+  <link href="https://fonts.googleapis.com/css2?family=Outfit:wght@300;400;500;600;700&display=swap" rel="stylesheet" />
+
+  <script>
+    // 1. THEME INIT
+    if (localStorage.getItem("theme") === "light") {
+      document.documentElement.classList.remove("dark");
+      document.documentElement.classList.add("light");
+    } else {
+      document.documentElement.classList.add("dark");
+    }
+
+    tailwind.config = {
+      darkMode: "class",
+      theme: {
+        fontFamily: { sans: ["Outfit", "sans-serif"] },
+        extend: {
+          colors: { violet: { 450: "#8b5cf6" }, zinc: { 950: "#09090b" } },
+          animation: {
+            "pulse-slow": "pulse 4s cubic-bezier(0.4, 0, 0.6, 1) infinite",
+          },
+        },
+      },
+    };
+  </script>
+  <style>
+    .scrollbar-hide::-webkit-scrollbar {
+      display: none;
+    }
+
+    .glass {
+      background: rgba(255, 255, 255, 0.03);
+      backdrop-filter: blur(16px);
+      border: 1px solid rgba(255, 255, 255, 0.05);
+    }
+
+    html.light .glass {
+      background: rgba(255, 255, 255, 0.65);
+      border: 1px solid rgba(0, 0, 0, 0.05);
+      backdrop-filter: blur(12px);
+    }
+
+    .wave {
+      position: absolute;
+      width: 10px;
+      height: 10px;
+      background: #8b5cf6;
+      border-radius: 50%;
+      opacity: 0;
+    }
+
+    #toast-container {
+      position: fixed;
+      top: 1rem;
+      right: 1rem;
+      z-index: 100;
+      display: flex;
+      flex-direction: column;
+      gap: 0.5rem;
+    }
+
+    [x-cloak] {
+      display: none !important;
+    }
+  </style>
+</head>
+
+<body
+  class="bg-zinc-50 text-zinc-800 dark:bg-zinc-950 dark:text-zinc-100 h-screen flex flex-col overflow-hidden transition-colors duration-500"
+  x-data="berthciApp()" x-init="initApp()">
+  <div id="toast-container">
+    <template x-for="toast in toasts" :key="toast.id">
+      <div x-show="toast.visible" x-transition:enter="transition ease-out duration-300"
+        x-transition:enter-start="translate-x-full opacity-0" x-transition:enter-end="translate-x-0 opacity-100"
+        :class="`glass p-3 rounded-xl border-l-4 text-xs font-bold shadow-lg flex items-center gap-2 min-w-[200px] ${toast.type === 'success' ? 'border-emerald-500 text-emerald-500' : 'border-violet-500 text-violet-500'}`">
+        <i :class="toast.type === 'success' ? 'fa-solid fa-check' : 'fa-solid fa-info-circle'"></i>
+        <span x-text="toast.message"></span>
+      </div>
+    </template>
+  </div>
+
+  <header
+    class="h-16 border-b border-zinc-200 dark:border-white/5 bg-white/80 dark:bg-zinc-950/80 backdrop-blur-xl flex items-center justify-between px-6 z-50 flex-shrink-0">
+    <div class="flex items-center gap-4">
+      <button @click="sidebarOpen = !sidebarOpen"
+        class="w-8 h-8 flex items-center justify-center rounded-lg hover:bg-zinc-200 dark:hover:bg-white/10 lg:hidden transition">
+        <i class="fa-solid fa-bars"></i>
+      </button>
+      <div class="flex items-center gap-3 cursor-pointer" onclick="toggleDashboard()">
+        <div id="logo-box"
+          class="w-10 h-10 rounded-xl bg-gradient-to-br from-violet-600 to-indigo-600 flex items-center justify-center shadow-lg shadow-violet-500/20">
+          <i class="fa-solid fa-dna text-white text-lg"></i>
+        </div>
+        <div>
+          <h1 class="font-bold text-lg tracking-tight leading-tight">
+            BERTHCI
+          </h1>
+          <div class="flex items-center gap-2">
+            <span id="status-dot" class="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse"></span>
+            <p class="text-[10px] text-zinc-500 dark:text-zinc-400 font-medium tracking-widest uppercase"
+              x-text="currentSessionTitle || 'General Chat'"></p>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <div class="flex items-center gap-3">
+      <div class="hidden md:flex items-center gap-3">
+        <button @click="openModal('capabilities')"
+          class="px-3 py-1.5 rounded-full bg-zinc-100 dark:bg-white/5 hover:bg-zinc-200 dark:hover:bg-white/10 transition text-xs font-semibold">
+          <i class="fa-solid fa-layer-group"></i> Capabilities
+        </button>
+        <button @click="exportChat()"
+          class="px-3 py-1.5 rounded-full bg-zinc-100 dark:bg-white/5 hover:bg-zinc-200 dark:hover:bg-white/10 transition text-xs font-semibold">
+          <i class="fa-solid fa-download"></i> Export
+        </button>
+      </div>
+      <button @click="toggleTheme()"
+        class="w-9 h-9 rounded-full bg-zinc-100 dark:bg-white/5 hover:bg-zinc-200 dark:hover:bg-white/10 transition flex items-center justify-center">
+        <i id="theme-icon" class="fa-solid fa-sun"></i>
+      </button>
+    </div>
+  </header>
+
+  <div class="flex flex-col lg:flex-row h-[calc(100vh-64px)] relative overflow-hidden">
+    <div id="sys-dashboard"
+      class="absolute inset-x-0 top-0 h-64 bg-zinc-900/95 backdrop-blur-2xl z-40 border-b border-white/10 transform -translate-y-full flex flex-col items-center justify-center px-10 text-white shadow-2xl transition-transform duration-500">
+      <div class="flex w-full max-w-5xl justify-around items-center mb-6">
+        <div class="text-center">
+          <p class="text-xs text-zinc-400 uppercase tracking-widest mb-2">
+            Neural Load
+          </p>
+          <div class="w-24 h-24"><canvas id="cpu-chart"></canvas></div>
+        </div>
+        <div class="flex-grow max-w-lg mx-8 glass rounded-xl overflow-hidden p-4">
+          <table class="w-full text-left text-xs">
+            <thead class="bg-white/5 text-zinc-400">
+              <tr>
+                <th class="p-2">Metric</th>
+                <th class="p-2 text-right">Value</th>
+              </tr>
+            </thead>
+            <tbody class="divide-y divide-white/5">
+              <tr>
+                <td class="p-2">Memory</td>
+                <td class="p-2 text-right font-mono text-emerald-400" id="tbl-mem">
+                  --
+                </td>
+              </tr>
+              <tr>
+                <td class="p-2">Latency</td>
+                <td class="p-2 text-right font-mono text-blue-400" id="tbl-lat">
+                  --
+                </td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+      </div>
+      <button onclick="toggleDashboard()" class="text-xs text-zinc-500 hover:text-white">
+        <i class="fa-solid fa-chevron-up"></i> Close Monitor
+      </button>
+    </div>
+
+    <div :class="sidebarOpen ? 'translate-x-0' : '-translate-x-full lg:translate-x-0'"
+      class="absolute lg:relative w-72 lg:w-[320px] h-full flex-shrink-0 flex flex-col gap-4 p-4 border-r border-zinc-200 dark:border-white/5 bg-white/95 dark:bg-zinc-900/95 lg:bg-white/50 lg:dark:bg-zinc-900/50 backdrop-blur-md z-30 transition-transform duration-300">
+      <div
+        class="w-full aspect-[4/3] bg-black/5 dark:bg-black/40 rounded-xl relative overflow-hidden shadow-inner flex-shrink-0 group">
+        <div id="three-container" class="w-full h-full opacity-80 transition-opacity"></div>
+        <div class="absolute bottom-2 left-3 text-[9px] text-zinc-500 uppercase tracking-widest">
+          Reactive Core v4
+        </div>
+      </div>
+
+      <div class="flex-shrink-0 flex-grow overflow-hidden flex flex-col">
+        <div class="flex justify-between items-center mb-2 px-1">
+          <span class="text-[10px] font-bold text-zinc-400 uppercase tracking-widest">History</span>
+          <button @click="createSession()" class="text-xs hover:text-violet-500 transition">
+            <i class="fa-solid fa-plus"></i>
+          </button>
+        </div>
+        <div id="session-list" class="flex flex-col gap-1 overflow-y-auto pr-1 scrollbar-hide">
+          <template x-for="session in sessions" :key="session.id">
+            <div @click="switchSession(session.id, session.title)"
+              :class="currentSessionId === session.id ? 'bg-violet-500/10 text-violet-500 border-violet-500/20' : 'hover:bg-black/5 dark:hover:bg-white/5 border-transparent text-zinc-500'"
+              class="p-2 rounded-lg border text-xs font-medium cursor-pointer transition truncate flex items-center gap-2">
+              <i class="fa-regular fa-message"></i>
+              <span x-text="session.title"></span>
+            </div>
+          </template>
+        </div>
+      </div>
+
+      <div
+        class="h-32 bg-zinc-900 rounded-xl p-3 font-mono text-[9px] text-zinc-400 overflow-y-auto border border-zinc-800 shadow-inner flex-shrink-0">
+        <template x-for="log in logs" :key="log.id">
+          <div class="mb-1">
+            <span class="text-emerald-500">></span>
+            <span x-text="log.text"></span>
+          </div>
+        </template>
+      </div>
+    </div>
+
+    <div x-show="sidebarOpen" @click="sidebarOpen = false"
+      class="fixed inset-0 bg-black/50 z-20 lg:hidden backdrop-blur-sm"></div>
+
+    <div class="flex-grow flex flex-col relative bg-zinc-50 dark:bg-[#050505] overflow-hidden">
+      <div id="chat-feed" class="flex-grow p-4 lg:p-8 space-y-4 overflow-y-auto scroll-smooth pb-24">
+        <template x-for="msg in messages" :key="msg.id">
+          <div :class="msg.role === 'user' ? 'flex-row-reverse' : ''" class="flex gap-4 opacity-0"
+            x-init="gsap.to($el, {opacity: 1, y: 0, duration: 0.4, ease: 'power2.out'}); gsap.from($el, {y: 20})">
+            <div
+              :class="msg.role === 'user' ? 'bg-zinc-200 dark:bg-zinc-800 text-zinc-500' : 'bg-gradient-to-tr from-violet-600 to-indigo-600 text-white'"
+              class="w-10 h-10 rounded-full flex items-center justify-center text-xs shadow-lg shrink-0">
+              <i :class="msg.role === 'user' ? 'fa-solid fa-user' : 'fa-solid fa-dna'"></i>
+            </div>
+
+            <div
+              :class="msg.role === 'user' ? 'bg-white dark:bg-zinc-900 border-zinc-200 dark:border-white/5 rounded-tr-sm' : 'glass rounded-tl-sm'"
+              class="p-5 rounded-2xl text-sm border border-zinc-100 dark:border-white/5 shadow-sm max-w-[85%] lg:max-w-2xl text-zinc-700 dark:text-zinc-200">
+              <div class="prose prose-sm max-w-none dark:prose-invert" x-html="renderMarkdown(msg.content)"></div>
+
+              <div :id="'chart-container-' + msg.id"
+                class="mt-3 w-full h-48 bg-black/5 dark:bg-black/20 rounded-lg p-2 hidden">
+                <canvas :id="'chart-' + msg.id"></canvas>
+              </div>
+
+              <template x-if="msg.intent">
+                <div class="mt-3 pt-3 border-t border-zinc-200 dark:border-white/5 flex justify-between items-center">
+                  <div class="flex items-center gap-2 text-violet-500">
+                    <i class="fa-solid fa-robot"></i>
+                    <span class="text-[9px] font-bold uppercase tracking-wider" x-text="msg.intent"></span>
+                  </div>
+                  <button @click="openVerify(msg.id)"
+                    class="text-[9px] px-2 py-1 rounded bg-zinc-100 dark:bg-white/10 hover:text-emerald-500 transition">
+                    <i class="fa-solid fa-check-double"></i> Verify
+                  </button>
+                </div>
+              </template>
+            </div>
+          </div>
+        </template>
+
+        <div x-show="isThinking" class="flex gap-4 opacity-70">
+          <div
+            class="w-10 h-10 rounded-full bg-gradient-to-tr from-violet-600 to-indigo-600 flex items-center justify-center text-white">
+            <i class="fa-solid fa-circle-notch fa-spin"></i>
+          </div>
+          <div class="glass p-3 rounded-2xl rounded-tl-none text-xs text-zinc-400 flex items-center">
+            Processing...
+          </div>
+        </div>
+      </div>
+
+      <div
+        class="absolute bottom-0 w-full p-4 lg:p-6 bg-gradient-to-t from-zinc-50 dark:from-[#050505] to-transparent z-20">
+        <form @submit.prevent="sendMessage" class="relative max-w-3xl mx-auto group">
+          <div
+            class="absolute inset-0 bg-violet-500/10 rounded-2xl blur-lg group-hover:bg-violet-500/20 transition duration-500">
+          </div>
+          <div
+            class="relative bg-white dark:bg-zinc-900 border border-zinc-200 dark:border-white/10 rounded-2xl flex items-center p-1.5 shadow-xl">
+            <button type="button" @click="triggerVoice"
+              class="w-10 h-10 rounded-xl flex items-center justify-center text-zinc-400 hover:text-violet-500 hover:bg-zinc-100 dark:hover:bg-white/5 transition relative overflow-hidden">
+              <i class="fa-solid fa-microphone"></i>
+              <div class="wave"></div>
+            </button>
+            <input x-model="userInput" type="text"
+              class="flex-grow bg-transparent border-none focus:ring-0 px-4 text-sm text-zinc-800 dark:text-zinc-100 placeholder-zinc-400 h-10 outline-none"
+              placeholder="Message BERTHCI..." autocomplete="off" />
+            <button type="submit"
+              class="w-10 h-10 rounded-xl bg-violet-600 hover:bg-violet-500 text-white flex items-center justify-center transition shadow-lg">
+              <i class="fa-solid fa-arrow-up"></i>
+            </button>
+          </div>
+        </form>
+      </div>
+    </div>
+  </div>
+
+  <div x-show="activeModal"
+    class="fixed inset-0 z-[80] flex items-center justify-center bg-black/60 backdrop-blur-sm p-4" x-transition.opacity>
+    <div x-show="activeModal === 'verify'" @click.away="activeModal = null"
+      class="glass p-6 rounded-3xl w-full max-w-sm shadow-2xl" x-transition:enter="transition ease-out duration-300"
+      x-transition:enter-start="scale-90 opacity-0" x-transition:enter-end="scale-100 opacity-100">
+      <h3 class="text-lg font-bold mb-2 flex items-center gap-2 text-zinc-900 dark:text-white">
+        <i class="fa-solid fa-shield-halved text-emerald-500"></i> Verify
+        Output
+      </h3>
+      <p class="text-xs text-zinc-500 dark:text-zinc-400 mb-6">
+        Validate response.
+      </p>
+      <div class="grid grid-cols-2 gap-3">
+        <button @click="report(false)"
+          class="py-3 rounded-xl bg-red-500/10 text-red-500 hover:bg-red-500/20 text-xs font-bold transition">
+          Hallucinated
+        </button>
+        <button @click="report(true)"
+          class="py-3 rounded-xl bg-emerald-500/10 text-emerald-500 hover:bg-emerald-500/20 text-xs font-bold transition">
+          Genuine
+        </button>
+      </div>
+    </div>
+
+    <div x-show="activeModal === 'capabilities'" @click.away="activeModal = null"
+      class="bg-white dark:bg-zinc-950 border border-zinc-200 dark:border-white/10 w-full max-w-3xl p-8 rounded-3xl relative overflow-hidden"
+      x-transition:enter="transition ease-out duration-300" x-transition:enter-start="scale-95 opacity-0"
+      x-transition:enter-end="scale-100 opacity-100">
+      <button @click="activeModal = null" class="absolute top-6 right-6 text-zinc-400 hover:text-white transition">
+        <i class="fa-solid fa-times text-xl"></i>
+      </button>
+      <h2 class="text-2xl font-bold mb-6 text-zinc-900 dark:text-white flex items-center gap-3">
+        <i class="fa-solid fa-layer-group text-violet-500"></i> Capabilities
+      </h2>
+      <div class="grid grid-cols-1 md:grid-cols-2 gap-6">
+        <div @click="useExample('Calculate 500 * 12 + 45')"
+          class="p-4 rounded-2xl bg-zinc-50 dark:bg-white/5 border border-zinc-200 dark:border-white/5 cursor-pointer hover:border-emerald-500/50 transition">
+          <h3 class="font-bold text-sm text-zinc-800 dark:text-white mb-1">
+            <i class="fa-solid fa-calculator text-emerald-500 mr-2"></i> Math
+            Engine
+          </h3>
+          <p class="text-xs text-zinc-500 dark:text-zinc-400">
+            Example: "Calculate 500 * 12 + 45"
+          </p>
+        </div>
+        <div @click="useExample('Write python code for a Login API')"
+          class="p-4 rounded-2xl bg-zinc-50 dark:bg-white/5 border border-zinc-200 dark:border-white/5 cursor-pointer hover:border-blue-500/50 transition">
+          <h3 class="font-bold text-sm text-zinc-800 dark:text-white mb-1">
+            <i class="fa-solid fa-code text-blue-500 mr-2"></i> Code Generator
+          </h3>
+          <p class="text-xs text-zinc-500 dark:text-zinc-400">
+            Example: "Write python code for a Login API"
+          </p>
+        </div>
+        <div @click="useExample('Fix this code: if x = 10 print error')"
+          class="p-4 rounded-2xl bg-zinc-50 dark:bg-white/5 border border-zinc-200 dark:border-white/5 cursor-pointer hover:border-orange-500/50 transition">
+          <h3 class="font-bold text-sm text-zinc-800 dark:text-white mb-1">
+            <i class="fa-solid fa-bug-slash text-orange-500 mr-2"></i> Code
+            Rectification
+          </h3>
+          <p class="text-xs text-zinc-500 dark:text-zinc-400">
+            Example: "Fix this code: if x = 10 print error"
+          </p>
+        </div>
+        <div @click="useExample('Plot a graph for User Growth')"
+          class="p-4 rounded-2xl bg-zinc-50 dark:bg-white/5 border border-zinc-200 dark:border-white/5 cursor-pointer hover:border-purple-500/50 transition">
+          <h3 class="font-bold text-sm text-zinc-800 dark:text-white mb-1">
+            <i class="fa-solid fa-chart-line text-purple-500 mr-2"></i>
+            Visualization
+          </h3>
+          <p class="text-xs text-zinc-500 dark:text-zinc-400">
+            Example: "Plot a graph for User Growth"
+          </p>
+        </div>
+        <div @click="useExample('Translate \" Hello, how are you?\" to Spanish')"
+          class="p-4 rounded-2xl bg-zinc-50 dark:bg-white/5 border border-zinc-200 dark:border-white/5 cursor-pointer hover:border-pink-500/50 transition">
+          <h3 class="font-bold text-sm text-zinc-800 dark:text-white mb-1">
+            <i class="fa-solid fa-language text-pink-500 mr-2"></i>
+            Translation
+          </h3>
+          <p class="text-xs text-zinc-500 dark:text-zinc-400">
+            Example: "Translate \"Hello, how are you?\" to Spanish"
+          </p>
+        </div>
+      </div>
+
+      <div class="mt-6 p-4 rounded-xl bg-violet-500/5 border border-violet-500/20">
+        <h4 class="text-xs font-bold text-violet-500 mb-2 flex items-center gap-2">
+          <i class="fa-solid fa-globe"></i> Supported Languages
+        </h4>
+        <div class="grid grid-cols-3 md:grid-cols-4 gap-2 text-[10px] text-zinc-600 dark:text-zinc-400">
+          <span>Spanish</span>
+          <span>French</span>
+          <span>German</span>
+          <span>Italian</span>
+          <span>Portuguese</span>
+          <span>Russian</span>
+          <span>Japanese</span>
+          <span>Korean</span>
+          <span>Chinese</span>
+          <span>Arabic</span>
+          <span>Hindi</span>
+          <span>Gujarati</span>
+          <span>Bengali</span>
+          <span>Dutch</span>
+          <span>Polish</span>
+          <span>Turkish</span>
+          <span class="col-span-3 md:col-span-4 text-violet-500 font-semibold">+ 15 more languages...</span>
+        </div>
+      </div>
+    </div>
+  </div>
+  </div>
+  </div>
+  </div>
+
+  <script>
+    // GLOBAL THREE.JS VARIABLES (Fixed Proxy Issue)
+    let threeScene,
+      threeCamera,
+      threeRenderer,
+      threeShapes = {},
+      threeCurrentShape;
+
+    function berthciApp() {
+      return {
+        isDark: true,
+        sidebarOpen: false,
+        dashboardOpen: false,
+        activeModal: null,
+        isThinking: false,
+        isTraining: false,
+        userInput: "",
+        sessions: [],
+        messages: [],
+        currentSessionId: null,
+        currentSessionTitle: "",
+        stats: { memory: 0, latency: 0, uptime: "0%" },
+        toasts: [],
+        logs: [{ id: 1, text: "System Initialized" }],
+        verifyMsgId: null,
+        sysChart: null,
+
+        initApp() {
+          if (localStorage.getItem("theme") === "light") {
+            this.isDark = false;
+            document.documentElement.classList.remove("dark");
+          }
+          this.init3D();
+          this.loadSessions();
+          setInterval(() => {
+            if (this.dashboardOpen) this.fetchStats();
+          }, 2000);
+          // Real-time history poll
+          setInterval(() => this.loadSessions(true), 5000);
+        },
+
+        toggleTheme() {
+          this.isDark = !this.isDark;
+          document.documentElement.classList.toggle("dark");
+          localStorage.setItem("theme", this.isDark ? "dark" : "light");
+          this.update3DMaterial();
+        },
+
+        // 3D CORE (Logic separated from Alpine)
+        init3D() {
+          const c = document.getElementById("three-container");
+          threeScene = new THREE.Scene();
+          threeCamera = new THREE.PerspectiveCamera(
+            75,
+            c.clientWidth / c.clientHeight,
+            0.1,
+            1000,
+          );
+          threeCamera.position.z = 8;
+          threeRenderer = new THREE.WebGLRenderer({
+            alpha: true,
+            antialias: true,
+          });
+          threeRenderer.setSize(c.clientWidth, c.clientHeight);
+          c.appendChild(threeRenderer.domElement);
+
+          const grp = new THREE.Group();
+          threeScene.add(grp);
+          const mat = new THREE.MeshBasicMaterial({
+            color: 0x8b5cf6,
+            wireframe: true,
+            transparent: true,
+            opacity: 0.2,
+          });
+
+          threeShapes = {
+            icosahedron: new THREE.Mesh(
+              new THREE.IcosahedronGeometry(4, 1),
+              mat,
+            ),
+            box: new THREE.Mesh(new THREE.BoxGeometry(5, 5, 5), mat),
+            torus: new THREE.Mesh(
+              new THREE.TorusKnotGeometry(3, 0.8, 100, 16),
+              mat,
+            ),
+            cone: new THREE.Mesh(new THREE.ConeGeometry(4, 6, 16), mat),
+            sphere: new THREE.Mesh(new THREE.SphereGeometry(4, 16, 16), mat),
+          };
+
+          Object.values(threeShapes).forEach((m) => {
+            m.visible = false;
+            grp.add(m);
+          });
+          threeShapes["icosahedron"].visible = true;
+          threeCurrentShape = threeShapes["icosahedron"];
+
+          const animate = () => {
+            requestAnimationFrame(animate);
+            if (threeCurrentShape) {
+              threeCurrentShape.rotation.y += 0.002;
+              threeCurrentShape.rotation.x += 0.001;
+            }
+            threeRenderer.render(threeScene, threeCamera);
+          };
+          animate();
+        },
+
+        updateVisual(type) {
+          const target = threeShapes[type] || threeShapes["icosahedron"];
+          if (threeCurrentShape === target) return;
+          gsap.to(threeCurrentShape.scale, {
+            x: 0,
+            y: 0,
+            z: 0,
+            duration: 0.5,
+            onComplete: () => {
+              threeCurrentShape.visible = false;
+              threeCurrentShape.scale.set(1, 1, 1);
+              target.visible = true;
+              target.scale.set(0, 0, 0);
+              threeCurrentShape = target;
+              gsap.to(target.scale, {
+                x: 1,
+                y: 1,
+                z: 1,
+                duration: 0.5,
+                ease: "elastic.out(1, 0.5)",
+              });
+            },
+          });
+        },
+
+        update3DMaterial() {
+          const col = this.isDark ? 0x8b5cf6 : 0x27272a;
+          Object.values(threeShapes).forEach((s) =>
+            s.material.color.setHex(col),
+          );
+        },
+
+        // CORE LOGIC
+        async loadSessions(silent = false) {
+          const res = await fetch("/api/sessions");
+          const data = await res.json();
+          if (data.length !== this.sessions.length || !silent) {
+            this.sessions = data;
+            if (this.sessions.length > 0 && !this.currentSessionId)
+              this.switchSession(this.sessions[0].id, this.sessions[0].title);
+          }
+        },
+
+        async createSession() {
+          const res = await fetch("/api/sessions", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({}),
+          });
+          const data = await res.json();
+          this.addToast("New Session Created", "success");
+          this.loadSessions();
+          this.switchSession(data.id, data.title);
+        },
+
+        async switchSession(id, title) {
+          this.currentSessionId = id;
+          this.currentSessionTitle = title;
+          this.messages = [];
+          const res = await fetch(`/api/chat/${id}`);
+          const data = await res.json();
+          this.messages = data;
+          this.sidebarOpen = false;
+          this.$nextTick(() => {
+            this.messages.forEach((msg) => {
+              if (msg.content.includes("|||"))
+                this.renderGraph(msg.id, msg.content.split("|||")[1]);
+            });
+            this.scrollToBottom();
+          });
+        },
+
+        async sendMessage() {
+          if (!this.userInput.trim()) return;
+          const text = this.userInput;
+          this.userInput = "";
+
+          const tempId = Date.now();
+          this.messages.push({ id: tempId, role: "user", content: text });
+          this.scrollToBottom();
+          this.isThinking = true;
+
+          try {
+            const res = await fetch("/api/predict", {
+              method: "POST",
+              headers: { "Content-Type": "application/json" },
+              body: JSON.stringify({
+                text,
+                session_id: this.currentSessionId,
+              }),
+            });
+            const data = await res.json();
+
+            this.isThinking = false;
+            this.messages.push({
+              id: data.msg_id,
+              role: "bot",
+              content: data.reply,
+              intent: data.intent,
+            });
+            this.log(`Intent: ${data.intent} (${data.confidence})`);
+            this.updateVisual(data.visual);
+
+            if (data.reply.includes("|||")) {
+              this.$nextTick(() =>
+                this.renderGraph(data.msg_id, data.reply.split("|||")[1]),
+              );
+            }
+            this.scrollToBottom();
+          } catch (e) {
+            this.isThinking = false;
+            this.addToast("Connection Error", "error");
+          }
+        },
+
+        // UTILS
+        renderGraph(id, jsonStr) {
+          const container = document.getElementById("chart-container-" + id);
+          if (container) {
+            container.classList.remove("hidden");
+            const ctx = document.getElementById("chart-" + id);
+            const gData = JSON.parse(jsonStr);
+            new Chart(ctx, {
+              type: gData.type,
+              data: {
+                labels: gData.labels,
+                datasets: [
+                  {
+                    label: gData.label,
+                    data: gData.data,
+                    borderColor: "#8b5cf6",
+                    tension: 0.4,
+                  },
+                ],
+              },
+              options: {
+                responsive: true,
+                maintainAspectRatio: false,
+                plugins: { legend: { display: false } },
+              },
+            });
+          }
+        },
+
+        async trainModel() {
+          this.isTraining = true;
+          const res = await fetch("/api/train", { method: "POST" });
+          const data = await res.json();
+          this.isTraining = false;
+          if (data.is_overfit) this.addToast(data.message, "error");
+          else
+            this.addToast(
+              `Training Complete. Acc: ${data.accuracy}%`,
+              "success",
+            );
+        },
+
+        // TOAST SYSTEM
+        addToast(msg, type = "info") {
+          const id = Date.now();
+          this.toasts.push({ id, message: msg, type, visible: true });
+          setTimeout(() => {
+            const t = this.toasts.find((t) => t.id === id);
+            if (t) t.visible = false;
+          }, 3000);
+        },
+
+        // DASHBOARD
+        initChart() {
+          const ctx = document.getElementById("cpu-chart").getContext("2d");
+          this.sysChart = new Chart(ctx, {
+            type: "doughnut",
+            data: {
+              datasets: [
+                {
+                  data: [30, 70],
+                  backgroundColor: ["#8b5cf6", "transparent"],
+                  borderwidth: 0,
+                },
+              ],
+            },
+            options: {
+              cutout: "80%",
+              responsive: true,
+              maintainAspectRatio: false,
+              plugins: {
+                legend: { display: false },
+                tooltip: { enabled: false },
+              },
+            },
+          });
+        },
+        async fetchStats() {
+          const res = await fetch("/api/stats");
+          const d = await res.json();
+          if (this.sysChart) {
+            this.sysChart.data.datasets[0].data = [d.cpu, 100 - d.cpu];
+            this.sysChart.update();
+          }
+          document.getElementById("tbl-mem").innerText = d.memory + "%";
+          document.getElementById("tbl-lat").innerText = d.latency + " ms";
+        },
+
+        // HELPERS
+        openVerify(id) {
+          this.verifyMsgId = id;
+          this.activeModal = "verify";
+        },
+        openModal(name) {
+          this.activeModal = name;
+        },
+        async report(val) {
+          await fetch("/api/report", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({
+              msg_id: this.verifyMsgId,
+              is_genuine: val,
+            }),
+          });
+          this.activeModal = null;
+          this.addToast(
+            val ? "Verified Genuine" : "Reported Issue",
+            val ? "success" : "error",
+          );
+        },
+        exportChat() {
+          window.location.href = `/api/export/${this.currentSessionId}`;
+        },
+        useExample(txt) {
+          this.activeModal = null;
+          this.userInput = txt;
+          document.getElementById("user-input").focus();
+        },
+        triggerVoice() {
+          gsap.to(".wave", { scale: 3, opacity: 0, duration: 1, repeat: 3 });
+          setTimeout(() => this.addToast("Voice Input Active", "info"), 500);
+        },
+        toggleDashboard() {
+          this.dashboardOpen = !this.dashboardOpen;
+          if (this.dashboardOpen) {
+            this.$nextTick(() => {
+              if (!this.sysChart) this.initChart();
+              this.fetchStats();
+              gsap.from("#sys-dashboard", {
+                y: "-100%",
+                duration: 0.5,
+                ease: "power2.out",
+              });
+            });
+          }
+        },
+        log(txt) {
+          this.logs.unshift({ id: Date.now(), text: txt });
+        },
+        scrollToBottom() {
+          this.$nextTick(() => {
+            const el = document.getElementById("chat-feed");
+            el.scrollTop = el.scrollHeight;
+          });
+        },
+        renderMarkdown(txt) {
+          return marked.parse(txt.split("|||")[0]);
+        },
+      };
+    }
+
+    function toggleDashboard() {
+      this.dashboardOpen = !this.dashboardOpen;
+      if (this.dashboardOpen) {
+        this.$nextTick(() => {
+          if (!this.sysChart) this.initChart();
+          this.fetchStats();
+        });
+      }
+    }
+  </script>
+</body>
+
+</html>
