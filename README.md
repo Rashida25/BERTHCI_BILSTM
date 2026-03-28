@@ -94,11 +94,8 @@ MIT License - Educational purposes
 ## Author
 
 Rashida Rezina
-'''
 
-# =========================================================================
 # MAIN SETUP FUNCTION
-# =========================================================================
 ```def setup_project():
     """Create complete project structure"""
     
